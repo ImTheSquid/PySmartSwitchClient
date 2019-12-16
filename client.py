@@ -1,14 +1,14 @@
 import json
 import socket
 import sys
-from os import makedirs
-from os.path import join, isdir
+from os import makedirs, remove
+from os.path import join, isdir, isfile
 
 import appdirs
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import QDialog, QHBoxLayout, QGroupBox, QVBoxLayout, QListWidget, QPushButton, QLabel, QLineEdit, \
-    QSpinBox, QInputDialog, QMessageBox
+    QSpinBox, QInputDialog, QMessageBox, QAbstractItemView
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization as serial
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -51,9 +51,14 @@ class Client:
                 format=serial.PublicFormat.SubjectPublicKeyInfo
             ))
             data = s.recv(4096)
+            key = serial.load_pem_public_key(data, default_backend())
+            if not isinstance(key, rsa.RSAPublicKey):
+                print('Invalid key received. Terminating...')
+                s.close()
+                self.try_connection()
             if self.server_key is None:
                 print('Server public key received')
-                self.server_key = serial.load_pem_public_key(data, default_backend())
+                self.server_key = key
 
     def continue_connection(self, sock):
         pass
@@ -68,6 +73,8 @@ class ConnectionSplash(QDialog):
         self.setModal(True)
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
 
+        self.remove_item = QPushButton('Remove Item')
+
         main_layout = QHBoxLayout()
 
         # Saved IP's
@@ -76,10 +83,10 @@ class ConnectionSplash(QDialog):
         saved_box.setLayout(saved_layout)
         self.save_list = QListWidget()
         self.save_list.addItem('New Connection...')
+        self.save_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.loaded_connections = self.load_profiles()
         self.save_list.setCurrentRow(0)
         saved_layout.addWidget(self.save_list)
-        self.remove_item = QPushButton('Remove Item')
         self.remove_item.setEnabled(False)
         saved_layout.addWidget(self.remove_item)
 
@@ -133,13 +140,12 @@ class ConnectionSplash(QDialog):
         user_dir = appdirs.user_data_dir('PySmartSwitchClient', 'JackHogan')
         if not isdir(user_dir):
             makedirs(user_dir, exist_ok=True)
-        open(join(user_dir, 'profiles.txt'), 'w+')
-        with open(join(user_dir, 'profiles.txt'), 'r') as json_file:
-            if len(json_file.readlines()) == 0:
-                with open(join(user_dir, 'profiles.txt'), 'w') as writer:
-                    writer.write('{}')
-                    writer.close()
+        if not isfile(join(user_dir, 'profiles.json')):
+            with open(join(user_dir, 'profiles.json'), 'w') as f:
+                f.write('{}')
+        with open(join(user_dir, 'profiles.json'), 'r+') as json_file:
             profiles = json.load(json_file)
+            self.remove_item.setEnabled(len(profiles) > 0)
             for profile in profiles:
                 self.save_list.addItem(profile)
             return profiles
@@ -176,8 +182,18 @@ class ConnectionSplash(QDialog):
         self.save_list.setCurrentRow(len(self.save_list) - 1)
         self.remove_item.setEnabled(True)
 
-    def save_all_connections(self):
+    def update_remove(self):
+        self.remove_item.setEnabled(self.save_list.selectedItems()[0] == 'New Selection...')
+
+    def remove_selected_item(self):
         pass
+
+    def save_all_connections(self):
+        user_dir = appdirs.user_data_dir('PySmartSwitchClient', 'JackHogan')
+        if isfile(join(user_dir, 'profiles.json')):
+            remove(join(user_dir, 'profiles.json'))
+        with open(join(user_dir, 'profiles.json'), 'w') as f:
+            json.dump(self.loaded_connections, f)
 
     def get_port(self):
         return self.port.value()
