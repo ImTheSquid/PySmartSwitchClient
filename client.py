@@ -27,6 +27,7 @@ class Client:
         self.private_key = rsa.generate_private_key(65537, 2048, default_backend())
         self.public_key = self.private_key.public_key()
         self.server_key = None
+        print('Finished generating keys.')
 
         self.try_connection()
 
@@ -50,14 +51,14 @@ class Client:
                 encoding=serial.Encoding.PEM,
                 format=serial.PublicFormat.SubjectPublicKeyInfo
             ))
-            data = s.recv(4096)
+            data = s.recv(8192)
             key = serial.load_pem_public_key(data, default_backend())
             if not isinstance(key, rsa.RSAPublicKey):
                 print('Invalid key received. Terminating...')
                 s.close()
                 self.try_connection()
             if self.server_key is None:
-                print('Server public key received')
+                print('Server public key received.')
                 self.server_key = key
 
     def continue_connection(self, sock):
@@ -86,8 +87,10 @@ class ConnectionSplash(QDialog):
         self.save_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.loaded_connections = self.load_profiles()
         self.save_list.setCurrentRow(0)
+        self.save_list.clicked.connect(self.update_list_functions)
         saved_layout.addWidget(self.save_list)
         self.remove_item.setEnabled(False)
+        self.remove_item.clicked.connect(self.remove_selected_item)
         saved_layout.addWidget(self.remove_item)
 
         # Connection
@@ -182,11 +185,19 @@ class ConnectionSplash(QDialog):
         self.save_list.setCurrentRow(len(self.save_list) - 1)
         self.remove_item.setEnabled(True)
 
-    def update_remove(self):
-        self.remove_item.setEnabled(self.save_list.selectedItems()[0] == 'New Selection...')
+    def update_list_functions(self):
+        self.remove_item.setEnabled(not self.save_list.currentItem().text() == 'New Connection...')
+        if self.save_list.currentItem().text() == 'New Connection...':
+            self.address.setText('')
+            self.port.setValue(30000)
+        else:
+            self.address.setText(self.loaded_connections[self.save_list.currentItem().text()][0])
+            self.port.setValue(self.loaded_connections[self.save_list.currentItem().text()][1])
 
     def remove_selected_item(self):
-        pass
+        self.loaded_connections.pop(self.save_list.currentItem().text())
+        self.save_list.takeItem(self.save_list.row(self.save_list.currentItem()))
+        self.update_list_functions()
 
     def save_all_connections(self):
         user_dir = appdirs.user_data_dir('PySmartSwitchClient', 'JackHogan')
