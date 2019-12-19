@@ -10,8 +10,8 @@ from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import QDialog, QHBoxLayout, QGroupBox, QVBoxLayout, QListWidget, QPushButton, QLabel, QLineEdit, \
     QSpinBox, QInputDialog, QMessageBox, QAbstractItemView
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization as serial
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization as serial, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 
 """
 This class handles client-server communication including opening/closing connections using GUI's
@@ -51,6 +51,7 @@ class Client:
                 encoding=serial.Encoding.PEM,
                 format=serial.PublicFormat.SubjectPublicKeyInfo
             ))
+            # Receive server public key
             data = s.recv(8192)
             key = serial.load_pem_public_key(data, default_backend())
             if not isinstance(key, rsa.RSAPublicKey):
@@ -60,9 +61,21 @@ class Client:
             if self.server_key is None:
                 print('Server public key received.')
                 self.server_key = key
+                self.continue_connection(s)
 
     def continue_connection(self, sock):
         pass
+
+    def encrypt_data(self, data: str) -> bytes:
+        return self.server_key.encrypt(data.encode('utf-8'), padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                                                                          algorithm=hashes.SHA256(),
+                                                                          label=None))
+
+    def decrypt_data(self, data: bytes) -> str:
+        cipher = self.private_key.decrypt(data, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                                                             algorithm=hashes.SHA256(),
+                                                             label=None))
+        return cipher.decode('utf-8')
 
 
 class ConnectionSplash(QDialog):
